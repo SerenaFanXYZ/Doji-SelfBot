@@ -14,6 +14,11 @@
           "timestamp": "2025-06-19 19:34:01 CET",
           "channel": "mess-hall",
           "content": "😉"
+        },
+        {
+          "timestamp": "2025-06-19 20:44:44 CET",
+          "channel": "mess-hall",
+          "content": "sync test"
         }
       ]
     },
@@ -29,6 +34,16 @@
           "timestamp": "2025-06-19 17:05:52 CET",
           "channel": "german-news",
           "content": "“I don’t like them either”"
+        },
+        {
+          "timestamp": "2025-06-19 20:05:30 CET",
+          "channel": "german-news",
+          "content": "Israel’s health minister just said destroying hospitals is a war crime. Who’s gonna tell him"
+        },
+        {
+          "timestamp": "2025-06-19 20:30:58 CET",
+          "channel": "german-news",
+          "content": "16 billion passwords, emails, and a bunch of other stuff were just leaked worldwide, so u might wanna change your passwords and stuff"
         }
       ]
     }
