@@ -634,10 +634,32 @@ const SERENA_VIDEO_LINKS = [
 ];
 // --- End Serena Command Configuration ---
 
+/**
+ * Sanitizes a string to be safe for use as a filename.
+ * Replaces invalid characters with underscores and handles length constraints.
+ * @param {string} name The string to sanitize.
+ * @returns {string} The sanitized filename string.
+ */
+function sanitizeFilename(name) {
+    let sanitized = name
+        .replace(/[\\/:*?"<>|]/g, '_') // Replace common invalid characters
+        .replace(/\s+/g, '_') // Replace spaces with underscores
+        .replace(/__+/g, '_') // Replace multiple underscores with a single one
+        .trim(); // Trim whitespace from ends
+
+    // Limit length to avoid filesystem issues (e.g., 255 characters common limit)
+    // and ensure it doesn't end with a dot.
+    sanitized = sanitized.substring(0, Math.min(sanitized.length, 200)); // Arbitrary length limit
+    if (sanitized.endsWith('.')) {
+        sanitized = sanitized.slice(0, -1);
+    }
+    return sanitized;
+}
 
 async function logMessageToFile(message) {
     const userId = message.author.id;
-    const username = message.author.tag;
+    const username = message.author.tag; // This is the display name (e.g., "User#1234" or new username formats)
+    const sanitizedUsername = sanitizeFilename(username); // Sanitize for filename safety
     const guildName = message.guild ? message.guild.name : 'Direct Messages';
     const guildId = message.guild ? message.guild.id : 'DM_CHANNEL';
     const channelName = message.channel.name || 'DM Channel';
@@ -657,30 +679,58 @@ async function logMessageToFile(message) {
     }
 
     const userLogDir = path.join(MOIA_SPY_RECORDS_BASE_DIR, targetSubDir);
-    const filePath = path.join(userLogDir, `${userId}.json`);
+    // Construct paths for both potential filenames (old ID-based and new username-based)
+    const oldFilePath = path.join(userLogDir, `${userId}.json`);
+    const newFilePath = path.join(userLogDir, `${sanitizedUsername}.json`);
 
     try {
         await fsPromises.mkdir(userLogDir, { recursive: true });
 
         let userData = {
-            userId: userId,
-            username: username,
+            userId: userId, // Keep ID inside the file for unique identification
+            username: username, // Store the current display name
             guilds: {}
         };
+        let fileRead = false;
 
+        // Try to read from the new (username-based) path first
         try {
-            const fileContent = await fsPromises.readFile(filePath, 'utf8');
+            const fileContent = await fsPromises.readFile(newFilePath, 'utf8');
             userData = JSON.parse(fileContent);
-            if (!userData.guilds) {
-                userData.guilds = {};
-            }
+            fileRead = true;
+            console.log(`[Message Logger] Found and read file at new path: ${newFilePath}`);
         } catch (readError) {
             if (readError.code === 'ENOENT') {
-                // File not found is expected on first run, ignore.
-                // console.log(`[Message Logger] No existing log file for ${username} (${userId}). Creating new.`);
+                // If not found at new path, try the old (ID-based) path
+                try {
+                    const fileContent = await fsPromises.readFile(oldFilePath, 'utf8');
+                    userData = JSON.parse(fileContent);
+                    fileRead = true;
+                    console.log(`[Message Logger] Found and read file at old path: ${oldFilePath}`);
+                    
+                    // If successfully read from old path, rename it to the new path
+                    await fsPromises.rename(oldFilePath, newFilePath);
+                    console.log(`[Message Logger] Renamed log file from ${oldFilePath} to ${newFilePath}.`);
+                } catch (oldReadError) {
+                    if (oldReadError.code !== 'ENOENT') {
+                        console.error(`[Message Logger Error] Failed to read existing log file from old path ${oldFilePath}:`, oldReadError);
+                    } else {
+                        console.log(`[Message Logger] No existing log file found for ${username} (${userId}). Creating new at ${newFilePath}.`);
+                    }
+                }
             } else {
-                console.error(`[Message Logger Error] Failed to read existing log file for ${username} (${userId}):`, readError); // Log full error object
+                console.error(`[Message Logger Error] Failed to read existing log file from new path ${newFilePath}:`, readError);
             }
+        }
+
+        if (!userData.guilds) {
+            userData.guilds = {};
+        }
+
+        // Always update the username in the file's metadata to the latest display name
+        if (userData.username !== username) {
+            console.log(`[Message Logger] Updating username metadata in file ${newFilePath} from "${userData.username}" to "${username}".`);
+            userData.username = username;
         }
 
         if (!userData.guilds[guildId]) {
@@ -696,8 +746,9 @@ async function logMessageToFile(message) {
             content: messageContent,
         });
 
-        await fsPromises.writeFile(filePath, JSON.stringify(userData, null, 2), 'utf8');
-        console.log(`[Message Logger] Logged message from ${username} in ${guildName}/${channelName}.`);
+        // Always write to the new (username-based) file path
+        await fsPromises.writeFile(newFilePath, JSON.stringify(userData, null, 2), 'utf8');
+        console.log(`[Message Logger] Logged message from ${username} (${userId}) in ${guildName}/${channelName} to file ${sanitizedUsername}.json.`);
 
     } catch (writeError) {
         console.error(`[Message Logger Error] Failed to write message to log file for ${username} (${userId}):`, writeError); // Log full error object
